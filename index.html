@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0b0f14">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>FastChat</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121820; --line:rgba(94,231,255,.18); --fg:#e8f4f8; --muted:#7d8b96;
+    --cyan:#5ee7ff; --cyan-dim:rgba(94,231,255,.55); --ok:#4ade80; --err:#ff6b6b; --warn:#ffd166;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);overflow:hidden;overscroll-behavior:none;
+    font:15px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
+  svg.i{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  [hidden]{display:none!important}
+
+  /* ---------- Inicio ---------- */
+  #home{position:fixed;inset:0;display:flex;flex-direction:column;
+    background:radial-gradient(120% 70% at 50% 78%,#10202a 0%,var(--bg) 60%)}
+  header{display:flex;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 14px) 18px 8px}
+  .brand{font-weight:700;letter-spacing:.14em;font-size:13px;color:var(--cyan)}
+  #status{flex:1;text-align:right;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #status.ok{color:var(--ok)} #status.err{color:var(--err)} #status.warn{color:var(--warn)}
+  .icon-btn{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:var(--muted)}
+
+  #stage{position:relative;flex:1;touch-action:none}
+  #core{position:absolute;left:50%;bottom:34px;width:118px;height:118px;margin-left:-59px;border-radius:50%;
+    touch-action:none;transition:transform .2s}
+  #core svg{width:100%;height:100%;overflow:visible}
+  #core .ticks{transform-origin:60px 60px;transition:transform .6s cubic-bezier(.2,.8,.2,1)}
+  #core.open .ticks{transform:rotate(30deg)}
+  #core .prog{stroke-dasharray:364;stroke-dashoffset:364;transform:rotate(-90deg);transform-origin:60px 60px}
+  #core.charging .prog{transition:stroke-dashoffset var(--hold) linear;stroke-dashoffset:0}
+  #core.open{transform:scale(.9)}
+  #hint{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:12px;color:var(--muted);transition:opacity .2s}
+
+  .item{position:absolute;width:60px;height:60px;margin:-30px 0 0 -30px;border-radius:50%;
+    background:var(--panel);border:1px solid var(--line);color:var(--cyan);display:grid;place-items:center;
+    opacity:0;transform:scale(.3);transition:opacity .18s,transform .18s,left .22s,top .22s,background .12s;pointer-events:none}
+  .item span{position:absolute;top:66px;font-size:12px;color:var(--muted);white-space:nowrap}
+  #stage.open .item{opacity:1;transform:scale(1)}
+  .item.hot{background:var(--cyan);color:#06222b;transform:scale(1.18)!important;border-color:var(--cyan)}
+  .item.hot span{color:var(--fg)}
+  .edge{position:absolute;bottom:40px;font-size:22px;color:var(--cyan-dim);opacity:0;transition:opacity .2s}
+  #stage.open .edge{opacity:.7}
+  .edge.l{left:10px} .edge.r{right:10px}
+
+  /* ---------- Barra de destino ---------- */
+  footer{position:relative;padding:8px 14px calc(env(safe-area-inset-bottom) + 14px)}
+  #destBar{display:flex;align-items:center;gap:10px;height:52px;border-radius:16px;background:var(--panel);
+    border:1px solid var(--line);padding:0 8px 0 16px}
+  #destBar:focus-within{border-color:var(--cyan)}
+  #destBar .slash{color:var(--cyan);font-weight:700;font-size:20px}
+  #dest{flex:1;min-width:0;height:100%;border:0;background:none;color:var(--fg);font-size:16px;outline:none;
+    -webkit-user-select:text;user-select:text}
+  #dest::placeholder{color:var(--fg)}
+  #dest:focus::placeholder{color:var(--muted)}
+  #thumb{position:relative;width:38px;height:38px;border-radius:10px;background:#0006 center/cover;border:1px solid var(--line);flex:none}
+  #badge{position:absolute;top:-7px;right:-7px;min-width:20px;height:20px;border-radius:10px;padding:0 5px;font-size:11px;
+    font-weight:700;display:none;place-items:center;background:var(--warn);color:#000}
+  #badge.show{display:grid} #badge.ok{background:var(--ok)}
+  #destList{position:absolute;left:14px;right:14px;bottom:calc(100% - 4px);max-height:46vh;overflow-y:auto;list-style:none;
+    margin:0;padding:6px;border-radius:16px;background:var(--panel);border:1px solid var(--line);box-shadow:0 -10px 30px #000a}
+  #destList li{padding:13px 12px;border-radius:10px;display:flex;gap:10px;align-items:baseline;font-size:15px}
+  #destList li .n{color:var(--muted);min-width:16px;font-size:13px}
+  #destList li.sel{background:#1c2632}
+  #destList li.new{color:var(--cyan)}
+
+  /* ---------- Pantallas superpuestas ---------- */
+  .layer{position:fixed;inset:0;z-index:5;background:#000;display:flex;flex-direction:column}
+  .topbar{position:relative;z-index:2;display:flex;align-items:center;gap:10px;
+    padding:calc(env(safe-area-inset-top) + 10px) 12px 10px;background:linear-gradient(#000a,transparent)}
+  .topbar .t{flex:1;font-size:14px;color:var(--muted)} .topbar .t b{color:var(--cyan);font-weight:600}
+  #video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  #flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+  #flash.on{opacity:.8;transition:none}
+  .bottombar{position:relative;z-index:2;margin-top:auto;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+    padding:16px 30px calc(env(safe-area-inset-bottom) + 22px);background:linear-gradient(transparent,#000b 40%)}
+  #shutter{width:76px;height:76px;border-radius:50%;border:3px solid #fff;padding:5px}
+  #shutter::after{content:"";display:block;width:100%;height:100%;border-radius:50%;background:#fff;transition:all .15s}
+  #shutter:active::after{transform:scale(.88)}
+  #shutter.video::after{background:var(--err)}
+  #shutter.rec::after{border-radius:8px;transform:scale(.55)}
+  #recTime{justify-self:start;font-variant-numeric:tabular-nums;color:var(--err);font-weight:600}
+  #camCount{justify-self:end;font-size:13px;color:var(--muted)}
+
+  #note{background:var(--bg)}
+  #noteText{flex:1;margin:0 14px;border-radius:16px;border:1px solid var(--line);background:var(--panel);color:var(--fg);
+    padding:14px;font:16px/1.45 inherit;resize:none;outline:none;-webkit-user-select:text;user-select:text}
+  #noteText:focus{border-color:var(--cyan)}
+  .actions{display:flex;gap:10px;padding:12px 14px calc(env(safe-area-inset-bottom) + 14px)}
+  .btn{flex:1;height:50px;border-radius:14px;background:#1c2632;font-weight:600}
+  .btn.primary{background:var(--cyan);color:#06222b}
+  .btn.danger{color:var(--err)}
+
+  #preview{background:#000}
+  #pvBox{flex:1;display:grid;place-items:center;overflow:hidden;padding:8px}
+  #pvBox img,#pvBox video{max-width:100%;max-height:100%;border-radius:10px}
+  #pvBox .file{color:var(--muted);text-align:center;padding:30px}
+
+  .sheet{position:fixed;inset:0;z-index:8;background:rgba(5,8,12,.96);display:flex;flex-direction:column;justify-content:center;
+    padding:24px;gap:12px;text-align:center}
+  .sheet h2{margin:0 0 6px;font-size:22px;color:var(--cyan);letter-spacing:.06em}
+  .sheet p{margin:0;color:var(--muted)}
+  .sheet .btn{flex:none}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:14px;background:#1c2632;text-align:left}
+  .row input{width:22px;height:22px;accent-color:var(--cyan)}
+
+  #toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 56px);transform:translateX(-50%);z-index:20;
+    background:#121820ee;border:1px solid var(--line);padding:9px 15px;border-radius:999px;font-size:14px;opacity:0;
+    transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center}
+  #toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- ================= INICIO ================= -->
+<div id="home">
+  <header>
+    <div class="brand">FASTCHAT</div>
+    <div id="status">Listo</div>
+    <button class="icon-btn" id="btnSettings" aria-label="Ajustes">
+      <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+    </button>
+  </header>
+
+  <div id="stage">
+    <span class="edge l">‹</span><span class="edge r">›</span>
+    <button id="core" aria-label="Tocar: foto. Mantener: más opciones">
+      <svg viewBox="0 0 120 120">
+        <defs>
+          <radialGradient id="glow"><stop offset="0" stop-color="#eafcff"/><stop offset=".35" stop-color="#5ee7ff"/>
+            <stop offset="1" stop-color="#5ee7ff" stop-opacity="0"/></radialGradient>
+        </defs>
+        <circle cx="60" cy="60" r="34" fill="url(#glow)" opacity=".35"/>
+        <circle cx="60" cy="60" r="58" fill="none" stroke="#5ee7ff" stroke-opacity=".45" stroke-width="1.5"/>
+        <circle class="prog" cx="60" cy="60" r="58" fill="none" stroke="#5ee7ff" stroke-width="2.5" stroke-linecap="round"/>
+        <g class="ticks"><circle cx="60" cy="60" r="43" fill="none" stroke="#5ee7ff" stroke-opacity=".8" stroke-width="5"
+          stroke-dasharray="15.5 7" transform="rotate(-6 60 60)"/></g>
+        <circle cx="60" cy="60" r="12" fill="url(#glow)"/>
+        <circle cx="60" cy="60" r="9" fill="#bff6ff"/>
+      </svg>
+    </button>
+    <div id="hint">Toca: foto · Mantén: más opciones</div>
+  </div>
+
+  <footer>
+    <ul id="destList" hidden></ul>
+    <label id="destBar">
+      <span class="slash">/</span>
+      <input id="dest" type="text" placeholder="General" autocomplete="off" autocorrect="off" autocapitalize="off"
+        spellcheck="false" enterkeyhint="done" aria-label="Destino">
+      <button type="button" id="thumb" aria-label="Ver lo último enviado"><span id="badge"></span></button>
+    </label>
+  </footer>
+</div>
+
+<!-- ================= CÁMARA ================= -->
+<div class="layer" id="cam" hidden>
+  <video id="video" playsinline muted autoplay></video>
+  <div id="flash"></div>
+  <div class="topbar">
+    <button class="icon-btn" id="camClose" aria-label="Cerrar" style="color:#fff">
+      <svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="t">→ <b id="camDest"></b></div>
+  </div>
+  <div class="bottombar">
+    <div id="recTime"></div>
+    <button id="shutter" aria-label="Capturar"></button>
+    <div id="camCount"></div>
+  </div>
+</div>
+
+<!-- ================= NOTA ================= -->
+<div class="layer" id="note" hidden>
+  <div class="topbar">
+    <button class="icon-btn" id="noteClose" aria-label="Cerrar">
+      <svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="t">Nota → <b id="noteDest"></b></div>
+  </div>
+  <textarea id="noteText" placeholder="Escribe tu nota…"></textarea>
+  <div class="actions"><button class="btn primary" id="noteSend">Enviar</button></div>
+</div>
+
+<!-- ================= VISTA PREVIA ================= -->
+<div class="layer" id="preview" hidden>
+  <div class="topbar"><div class="t" id="pvTitle"></div></div>
+  <div id="pvBox"></div>
+  <div class="actions" id="pvActions"></div>
+</div>
+
+<!-- ================= AJUSTES / VINCULAR ================= -->
+<div class="sheet" id="settings" hidden>
+  <h2>Ajustes</h2>
+  <p id="setInfo"></p>
+  <label class="row"><span>Revisar antes de enviar<br><small style="color:var(--muted)">Muestra la foto o el video y tú decides si se envía</small></span>
+    <input type="checkbox" id="optReview"></label>
+  <button class="btn primary" id="btnTest">Probar conexión</button>
+  <button class="btn" id="btnRetry">Reintentar envíos pendientes</button>
+  <button class="btn danger" id="btnUnlink">Desvincular este celular</button>
+  <button class="btn" id="btnCloseSettings">Cerrar</button>
+</div>
+
+<div class="sheet" id="setup" hidden>
+  <h2>FASTCHAT</h2>
+  <p>Esta app todavía no está vinculada.</p>
+  <p>En tu laptop abre <b>Configurar.bat</b> y escanea con el celular el código QR que aparece.</p>
+</div>
+
+<div id="toast"></div>
+<input type="file" id="pickGallery" accept="image/*,video/*" multiple hidden>
+<input type="file" id="pickFile" multiple hidden>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const vib = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
+
+/* ================= almacenamiento ================= */
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+
+/* ================= vinculación desde el QR (#t=token&c=canal&f=cursos) ================= */
+(function readHash() {
+  if (!location.hash.includes('t=')) return;
+  const p = new URLSearchParams(location.hash.slice(1));
+  const t = p.get('t'), c = p.get('c'), f = p.get('f');
+  if (t && c) LS.set('cfg', { token: t, chat: c });
+  if (f) {
+    try {
+      const bytes = Uint8Array.from(atob(f.replace(/-/g, '+').replace(/_/g, '/')), ch => ch.charCodeAt(0));
+      const list = JSON.parse(new TextDecoder().decode(bytes));
+      if (Array.isArray(list)) LS.set('courses', list);
+    } catch (e) { console.warn('cursos inválidos', e); }
+  }
+  history.replaceState(null, '', location.pathname);
+  sessionStorage.setItem('justLinked', '1');
+})();
+
+let cfg = LS.get('cfg', null);
+const GENERAL = 'General';
+let courses = LS.get('courses', []);
+const destinations = () => [GENERAL, ...courses.filter(c => c !== GENERAL)];
+let dest = LS.get('dest', GENERAL);
+if (!destinations().includes(dest)) dest = GENERAL;
+
+/* ================= nombres y búsqueda ================= */
+const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const label = n => n.replace(/^\s*\d+\s*[.\-)\s]*/, '').trim() || n;
+const numOf = n => (n.match(/^\s*(\d+)/) || [])[1] || '';
+const STOP = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'y', 'e', 'a', 'en', 'para']);
+function score(name, q) {
+  q = norm(q.trim());
+  if (!q) return 1;
+  const l = norm(label(name)), words = l.split(/\s+/);
+  if (numOf(name) === q) return 100;
+  if (l.startsWith(q)) return 90;
+  if (words.some(w => w.startsWith(q))) return 80;
+  const ini = words.filter(w => !STOP.has(w)).map(w => w[0]).join('');
+  if (ini.startsWith(q.replace(/\s+/g, ''))) return 70;
+  if (l.includes(q)) return 60;
+  let i = 0; for (const ch of l) { if (ch === q[i]) i++; if (i === q.length) return 30; }
+  return 0;
+}
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+/* ================= barra de destino "/" ================= */
+const destInput = $('#dest'), destList = $('#destList');
+let matches = [], sel = 0;
+function showDest() { destInput.placeholder = label(dest); }
+function setDest(d) {
+  if (!destinations().includes(d)) { courses.push(d); LS.set('courses', courses); }
+  dest = d; LS.set('dest', d); showDest();
+  destInput.value = ''; destInput.blur(); destList.hidden = true;
+  toast('Destino: ' + label(d)); vib(10);
+}
+function renderDestList() {
+  const raw = destInput.value.replace(/^[\/@\s]+/, '');
+  const all = destinations();
+  matches = all.map(c => [c, score(c, raw)]).filter(x => x[1] > 0)
+    .sort((a, b) => b[1] - a[1] || all.indexOf(a[0]) - all.indexOf(b[0])).map(x => x[0]);
+  const exact = all.some(c => [norm(c), norm(label(c))].includes(norm(raw.trim())));
+  destList.innerHTML = '';
+  matches.forEach((c, i) => {
+    const li = document.createElement('li');
+    if (i === sel) li.className = 'sel';
+    li.innerHTML = `<span class="n">${numOf(c) || (c === GENERAL ? '·' : '')}</span><span>${esc(label(c))}</span>`;
+    li.addEventListener('pointerdown', e => { e.preventDefault(); setDest(c); });
+    destList.appendChild(li);
+  });
+  if (raw.trim() && !exact) {
+    const li = document.createElement('li'); li.className = 'new';
+    li.textContent = `+ Nueva carpeta «${raw.trim()}»`;
+    li.addEventListener('pointerdown', e => { e.preventDefault(); setDest(raw.trim()); });
+    destList.appendChild(li);
+  }
+  destList.hidden = !destList.children.length;
+}
+destInput.addEventListener('focus', () => { sel = 0; renderDestList(); });
+destInput.addEventListener('blur', () => setTimeout(() => { destList.hidden = true; destInput.value = ''; }, 120));
+destInput.addEventListener('input', () => { sel = 0; renderDestList(); });
+destInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); const r = destInput.value.replace(/^[\/@\s]+/, '').trim();
+    if (matches[sel]) setDest(matches[sel]); else if (r) setDest(r); else destInput.blur(); }
+  else if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, matches.length - 1); renderDestList(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); renderDestList(); e.preventDefault(); }
+  else if (e.key === 'Escape') destInput.blur();
+});
+// Teclado físico: "/" o "@" enfocan la barra
+document.addEventListener('keydown', e => {
+  if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+  if (e.key === '/' || e.key === '@') { e.preventDefault(); destInput.focus(); }
+});
+
+/* ================= logo: tocar = foto, mantener = menú radial ================= */
+const ICONS = {
+  foto: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  video: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/>',
+  nota: '<path d="M5 4h10l4 4v12H5z"/><path d="M8 12h8M8 16h5"/>',
+  ubicacion: '<path d="M12 21s-6-6.3-6-11a6 6 0 0112 0c0 4.7-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/>',
+  galeria: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/>',
+  archivo: '<path d="M20 11l-8 8a5 5 0 01-7-7l8-8a3.5 3.5 0 015 5l-8 8a2 2 0 01-3-3l7-7"/>',
+};
+const ACTIONS = [
+  { id: 'foto', txt: 'Foto' }, { id: 'video', txt: 'Video' }, { id: 'nota', txt: 'Nota' },
+  { id: 'ubicacion', txt: 'Ubicación' }, { id: 'galeria', txt: 'Galería' }, { id: 'archivo', txt: 'Archivo' },
+];
+const SLOTS = [162, 126, 90, 54, 18];          // ángulos (grados) del arco sobre el logo
+const HOLD = 320;                              // ms que hay que mantener presionado
+const stage = $('#stage'), core = $('#core');
+core.style.setProperty('--hold', HOLD + 'ms');
+let rot = 0, hot = -1, holdT = null, edgeT = null, edgeDir = 0, menuOpen = false, center = { x: 0, y: 0 }, radius = 130;
+
+const itemEls = SLOTS.map(() => {
+  const el = document.createElement('div'); el.className = 'item';
+  el.innerHTML = '<svg class="i" viewBox="0 0 24 24"></svg><span></span>';
+  stage.appendChild(el); return el;
+});
+function actionAt(slot) { return ACTIONS[((rot + slot) % ACTIONS.length + ACTIONS.length) % ACTIONS.length]; }
+function layoutItems() {
+  const s = stage.getBoundingClientRect(), c = core.getBoundingClientRect();
+  center = { x: c.left + c.width / 2, y: c.top + c.height / 2 };
+  radius = Math.min(138, s.width * 0.37);
+  SLOTS.forEach((a, i) => {
+    const el = itemEls[i], act = actionAt(i), rad = a * Math.PI / 180;
+    el.style.left = (center.x - s.left + radius * Math.cos(rad)) + 'px';
+    el.style.top = (center.y - s.top - radius * Math.sin(rad)) + 'px';
+    el.querySelector('svg').innerHTML = ICONS[act.id];
+    el.querySelector('span').textContent = act.txt;
+    el.classList.toggle('hot', i === hot);
+  });
+}
+function openMenu() {
+  menuOpen = true; hot = -1; layoutItems();
+  stage.classList.add('open'); core.classList.add('open'); $('#hint').style.opacity = 0; vib(15);
+}
+function closeMenu() {
+  menuOpen = false; hot = -1; clearInterval(edgeT); edgeT = null; edgeDir = 0;
+  stage.classList.remove('open'); core.classList.remove('open', 'charging'); $('#hint').style.opacity = 1;
+  itemEls.forEach(el => el.classList.remove('hot'));
+}
+function track(x, y) {
+  const dx = x - center.x, dy = center.y - y, dist = Math.hypot(dx, dy);
+  let a = Math.atan2(dy, dx) * 180 / Math.PI;   // 0 derecha, 90 arriba, 180 izquierda
+  let newHot = -1, dir = 0;
+  if (dist > 48) {
+    if (a > 176 || a < -95) dir = -1;            // dedo más allá del borde izquierdo → girar
+    else if (a < 4) dir = 1;                     // más allá del borde derecho → girar
+    else {
+      let best = 999;
+      SLOTS.forEach((s, i) => { const d = Math.abs(s - a); if (d < best && d < 20) { best = d; newHot = i; } });
+    }
+  }
+  if (dir !== edgeDir) {
+    edgeDir = dir; clearInterval(edgeT); edgeT = null;
+    if (dir) { const step = () => { rot += dir; vib(8); layoutItems(); }; step(); edgeT = setInterval(step, 420); }
+  }
+  if (newHot !== hot) { hot = newHot; if (hot >= 0) vib(10); itemEls.forEach((el, i) => el.classList.toggle('hot', i === hot)); }
+}
+core.addEventListener('contextmenu', e => e.preventDefault());
+core.addEventListener('pointerdown', e => {
+  if (!cfg) return;
+  e.preventDefault();
+  try { core.setPointerCapture(e.pointerId); } catch {}
+  const c = core.getBoundingClientRect(); center = { x: c.left + c.width / 2, y: c.top + c.height / 2 };
+  core.classList.remove('charging'); void core.offsetWidth; core.classList.add('charging');
+  holdT = setTimeout(() => { holdT = null; openMenu(); }, HOLD);
+});
+core.addEventListener('pointermove', e => { if (menuOpen) track(e.clientX, e.clientY); });
+core.addEventListener('pointerup', () => {
+  if (holdT) { clearTimeout(holdT); holdT = null; core.classList.remove('charging'); run('foto'); return; }
+  const act = menuOpen && hot >= 0 ? actionAt(hot).id : null;
+  closeMenu();
+  if (act) run(act);
+});
+core.addEventListener('pointercancel', () => { clearTimeout(holdT); holdT = null; closeMenu(); });
+window.addEventListener('resize', () => menuOpen && layoutItems());
+
+function run(id) {
+  if (id === 'foto') openCam('foto');
+  else if (id === 'video') openCam('video');
+  else if (id === 'nota') openNote();
+  else if (id === 'ubicacion') sendLocation();
+  else if (id === 'galeria') $('#pickGallery').click();
+  else if (id === 'archivo') $('#pickFile').click();
+}
+
+/* ================= cámara (foto y video) ================= */
+const video = $('#video');
+let stream = null, imageCapture = null, camMode = 'foto', recorder = null, recChunks = [], recSize = 0, recStart = 0, recTimer = null, camShots = 0;
+const MAX_VIDEO = 45 * 1024 * 1024;   // Telegram acepta hasta 50 MB por archivo de bot
+
+async function startStream(withAudio) {
+  stopStream();
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' }, width: { ideal: withAudio ? 1920 : 4096 }, height: { ideal: withAudio ? 1080 : 3072 } },
+    audio: withAudio,
+  });
+  video.srcObject = stream;
+  const track = stream.getVideoTracks()[0];
+  imageCapture = (!withAudio && 'ImageCapture' in window) ? new ImageCapture(track) : null;
+}
+function stopStream() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null; imageCapture = null; video.srcObject = null;
+}
+async function openCam(mode) {
+  camMode = mode; camShots = 0;
+  $('#camDest').textContent = label(dest);
+  $('#shutter').className = mode === 'video' ? 'video' : '';
+  $('#recTime').textContent = ''; $('#camCount').textContent = '';
+  $('#cam').hidden = false;
+  history.pushState({ layer: 'cam' }, '');
+  try { await startStream(mode === 'video'); }
+  catch (e) { toast('No pude abrir la cámara (' + e.name + ')'); closeCam(); }
+}
+function closeCam(fromPop) {
+  if (recorder && recorder.state === 'recording') recorder.stop();
+  stopStream(); $('#cam').hidden = true;
+  if (!fromPop && history.state && history.state.layer) history.back();
+}
+$('#camClose').onclick = () => closeCam();
+
+async function grabPhoto() {
+  if (imageCapture) { try { return await imageCapture.takePhoto(); } catch (e) { console.warn('takePhoto falló', e); } }
+  if (!video.videoWidth) throw new Error('La cámara no está lista');
+  const c = document.createElement('canvas'); c.width = video.videoWidth; c.height = video.videoHeight;
+  c.getContext('2d').drawImage(video, 0, 0);
+  return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('No se pudo capturar')), 'image/jpeg', 0.92));
+}
+const stamp = (d = new Date()) => {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+};
+function pickMime() {
+  const opts = [['video/mp4;codecs=avc1,mp4a', 'mp4'], ['video/mp4', 'mp4'], ['video/webm;codecs=vp9,opus', 'webm'], ['video/webm', 'webm']];
+  for (const [m, ext] of opts) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return { m, ext };
+  return { m: '', ext: 'webm' };
+}
+let busyShot = false;
+$('#shutter').onclick = async () => {
+  if (camMode === 'foto') {
+    if (busyShot) return; busyShot = true;
+    try {
+      $('#flash').classList.add('on'); setTimeout(() => $('#flash').classList.remove('on'), 60); vib(25);
+      const blob = await grabPhoto();
+      const item = { kind: 'doc', folder: dest, blob, name: `IMG_${stamp()}.jpg` };
+      if (LS.get('review', false)) review(item); else { await enqueue(item); camShots++; $('#camCount').textContent = `${camShots} enviada(s)`; }
+    } catch (e) { toast('⚠ ' + e.message); }
+    finally { busyShot = false; }
+    return;
+  }
+  // video
+  if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
+  if (!stream) return;
+  const { m, ext } = pickMime();
+  recChunks = []; recSize = 0;
+  recorder = new MediaRecorder(stream, m ? { mimeType: m, videoBitsPerSecond: 2_500_000 } : { videoBitsPerSecond: 2_500_000 });
+  recorder.ondataavailable = ev => {
+    if (ev.data && ev.data.size) { recChunks.push(ev.data); recSize += ev.data.size; }
+    if (recSize > MAX_VIDEO && recorder.state === 'recording') { toast('Límite de 45 MB alcanzado'); recorder.stop(); }
+  };
+  recorder.onstop = async () => {
+    clearInterval(recTimer); $('#shutter').classList.remove('rec'); $('#recTime').textContent = '';
+    const blob = new Blob(recChunks, { type: recorder.mimeType || 'video/webm' });
+    const item = { kind: 'doc', folder: dest, blob, name: `VID_${stamp()}.${ext}` };
+    if (LS.get('review', false)) review(item); else { await enqueue(item); toast('🎥 Video en camino'); }
+  };
+  recorder.start(1000);
+  recStart = Date.now(); $('#shutter').classList.add('rec'); vib(30);
+  recTimer = setInterval(() => {
+    const s = Math.floor((Date.now() - recStart) / 1000);
+    $('#recTime').textContent = `● ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }, 250);
+};
+
+/* ================= nota ================= */
+function openNote() {
+  $('#noteDest').textContent = label(dest); $('#noteText').value = LS.get('noteDraft', '');
+  $('#note').hidden = false; history.pushState({ layer: 'note' }, '');
+  setTimeout(() => $('#noteText').focus(), 50);
+}
+function closeNote(fromPop) {
+  $('#note').hidden = true; $('#noteText').blur();
+  if (!fromPop && history.state && history.state.layer) history.back();
+}
+$('#noteText').addEventListener('input', () => LS.set('noteDraft', $('#noteText').value));
+$('#noteClose').onclick = () => closeNote();
+$('#noteSend').onclick = async () => {
+  const text = $('#noteText').value.trim();
+  if (!text) { toast('La nota está vacía'); return; }
+  await enqueue({ kind: 'note', folder: dest, text });
+  LS.del('noteDraft'); closeNote(); toast('📝 Nota en camino a ' + label(dest));
+};
+
+/* ================= ubicación instantánea ================= */
+function sendLocation() {
+  if (!navigator.geolocation) { toast('Este celular no da ubicación'); return; }
+  const d = dest; toast('📍 Obteniendo ubicación…');
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const { latitude: lat, longitude: lon, accuracy } = pos.coords;
+    await enqueue({ kind: 'loc', folder: d, lat, lon, acc: Math.round(accuracy) });
+    toast(`📍 Ubicación enviada (±${Math.round(accuracy)} m)`);
+  }, err => toast('No pude obtener la ubicación: ' + err.message), { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
+}
+
+/* ================= galería y archivos ================= */
+async function sendFiles(files) {
+  for (const f of files) await enqueue({ kind: 'doc', folder: dest, blob: f, name: f.name || `ARCH_${stamp()}` });
+  if (files.length) toast(`${files.length} archivo(s) en camino a ${label(dest)}`);
+}
+$('#pickGallery').onchange = e => { const f = [...e.target.files]; e.target.value = ''; sendFiles(f); };
+$('#pickFile').onchange = e => { const f = [...e.target.files]; e.target.value = ''; sendFiles(f); };
+
+/* ================= vista previa ================= */
+let pvUrl = null;
+function showPreview(item, title, buttons) {
+  if (pvUrl) URL.revokeObjectURL(pvUrl);
+  const box = $('#pvBox'); box.innerHTML = '';
+  if (item.blob) {
+    pvUrl = URL.createObjectURL(item.blob);
+    const type = item.blob.type || '';
+    if (type.startsWith('image/')) box.innerHTML = `<img src="${pvUrl}" alt="">`;
+    else if (type.startsWith('video/')) box.innerHTML = `<video src="${pvUrl}" controls playsinline autoplay></video>`;
+    else box.innerHTML = `<div class="file">📎 ${esc(item.name)}</div>`;
+  } else if (item.kind === 'note') box.innerHTML = `<div class="file" style="white-space:pre-wrap;text-align:left">${esc(item.text)}</div>`;
+  else if (item.kind === 'loc') box.innerHTML = `<div class="file">📍 ${item.lat.toFixed(5)}, ${item.lon.toFixed(5)}</div>`;
+  $('#pvTitle').innerHTML = title;
+  const act = $('#pvActions'); act.innerHTML = '';
+  buttons.forEach(([txt, cls, fn]) => { const b = document.createElement('button'); b.className = 'btn ' + cls; b.textContent = txt; b.onclick = fn; act.appendChild(b); });
+  $('#preview').hidden = false;
+}
+function closePreview() { $('#preview').hidden = true; $('#pvBox').innerHTML = ''; if (pvUrl) { URL.revokeObjectURL(pvUrl); pvUrl = null; } }
+function review(item) {
+  showPreview(item, `¿Enviar a <b style="color:var(--cyan)">${esc(label(item.folder))}</b>?`, [
+    ['Repetir', '', closePreview],
+    ['Enviar', 'primary', async () => { closePreview(); await enqueue(item); camShots++; $('#camCount').textContent = `${camShots} enviada(s)`; }],
+  ]);
+}
+let lastItem = null;
+$('#thumb').onclick = e => {
+  e.preventDefault(); e.stopPropagation();
+  if (!lastItem) { toast('Aún no has enviado nada'); return; }
+  showPreview(lastItem, `Último envío → <b style="color:var(--cyan)">${esc(label(lastItem.folder))}</b>`, [['Cerrar', '', closePreview]]);
+};
+
+window.addEventListener('popstate', () => {
+  if (!$('#cam').hidden) closeCam(true);
+  if (!$('#note').hidden) closeNote(true);
+});
+
+/* ================= cola persistente (IndexedDB) ================= */
+const DB = (() => {
+  let dbp = null, mem = [], memId = 1, useMem = false;
+  const open = () => dbp ||= new Promise((res, rej) => {
+    const r = indexedDB.open('fastchat', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('q', { keyPath: 'id', autoIncrement: true });
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+  async function tx(mode, fn) {
+    const db = await open();
+    return new Promise((res, rej) => {
+      const t = db.transaction('q', mode), req = fn(t.objectStore('q'));
+      t.oncomplete = () => res(req && req.result); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+    });
+  }
+  const wrap = (idb, m) => async (...a) => {
+    if (!useMem) { try { return await idb(...a); } catch (e) { console.warn('IndexedDB no disponible', e); useMem = true; } }
+    return m(...a);
+  };
+  return {
+    add: wrap(it => tx('readwrite', s => s.add(it)), it => { mem.push({ ...it, id: memId++ }); }),
+    del: wrap(id => tx('readwrite', s => s.delete(id)), id => { mem = mem.filter(x => x.id !== id); }),
+    first: wrap(() => tx('readonly', s => s.getAll(null, 1)).then(a => a[0]), () => mem[0]),
+    count: wrap(() => tx('readonly', s => s.count()), () => mem.length),
+  };
+})();
+
+let thumbUrl = null;
+async function enqueue(item) {
+  item.ts = Date.now();
+  lastItem = item;
+  if (item.blob && (item.blob.type || '').startsWith('image/')) {
+    if (thumbUrl) URL.revokeObjectURL(thumbUrl);
+    thumbUrl = URL.createObjectURL(item.blob); $('#thumb').style.backgroundImage = `url(${thumbUrl})`;
+  }
+  await DB.add(item); updateBadge(); pump();
+}
+
+let busy = false, sent = 0, fatal = null;
+async function api(method, body) {
+  let r;
+  try { r = await fetch(`https://api.telegram.org/bot${cfg.token}/${method}`, { method: 'POST', body }); }
+  catch { const e = new Error('Sin conexión'); e.net = true; throw e; }
+  const j = await r.json().catch(() => ({ ok: false, description: 'HTTP ' + r.status }));
+  if (!j.ok) {
+    const e = new Error(j.description || 'Error ' + r.status);
+    e.retryAfter = j.parameters && j.parameters.retry_after;
+    e.fatal = [400, 401, 403, 404].includes(r.status);
+    throw e;
+  }
+  return j.result;
+}
+async function send(it) {
+  const fd = new FormData();
+  fd.append('chat_id', cfg.chat);
+  fd.append('disable_notification', 'true');
+  if (it.kind === 'note' && it.text.length <= 3800) {
+    fd.append('text', `📝 ${it.folder}\n${it.text}`); return api('sendMessage', fd);
+  }
+  if (it.kind === 'loc') {
+    fd.append('text', `📍 ${it.folder}\nhttps://www.google.com/maps?q=${it.lat},${it.lon}\nPrecisión: ±${it.acc} m`);
+    fd.append('link_preview_options', JSON.stringify({ is_disabled: true }));
+    return api('sendMessage', fd);
+  }
+  let blob = it.blob, name = it.name;
+  if (it.kind === 'note') { blob = new Blob([it.text], { type: 'text/plain' }); name = `NOTA_${stamp(new Date(it.ts))}.txt`; }
+  fd.append('caption', it.folder);
+  fd.append('document', blob, name);
+  return api('sendDocument', fd);
+}
+async function pump() {
+  if (busy || !cfg) return;
+  busy = true; fatal = null;
+  try {
+    for (;;) {
+      const it = await DB.first(); if (!it) break;
+      setStatus(`Enviando → ${label(it.folder)}…`);
+      try { await send(it); await DB.del(it.id); sent++; }
+      catch (e) {
+        if (e.fatal) { fatal = e.message; break; }
+        if (e.net || !navigator.onLine) break;
+        await sleep((e.retryAfter || 4) * 1000);
+      }
+      updateBadge();
+    }
+  } finally { busy = false; updateBadge(); }
+}
+async function updateBadge() {
+  const n = await DB.count(), b = $('#badge');
+  if (n > 0) { b.textContent = n; b.className = 'show'; }
+  else if (sent > 0) { b.textContent = '✓'; b.className = 'show ok'; }
+  else b.className = '';
+  if (fatal) setStatus('Telegram: ' + fatal, 'err');
+  else if (n > 0 && !navigator.onLine) setStatus(`Sin señal · ${n} en cola`, 'warn');
+  else if (n > 0) setStatus(`${n} pendiente(s)…`, 'warn');
+  else setStatus(sent ? `✓ ${sent} enviado(s)` : 'Listo', sent ? 'ok' : '');
+}
+window.addEventListener('online', pump);
+window.addEventListener('offline', updateBadge);
+setInterval(pump, 20000);
+
+/* ================= estado y ajustes ================= */
+function setStatus(t, cls = '') { const s = $('#status'); s.textContent = t; s.className = cls; }
+let toastT;
+function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 2200); }
+
+$('#btnSettings').onclick = async () => {
+  $('#setInfo').textContent = `${destinations().length} destinos · ${await DB.count()} en cola`;
+  $('#optReview').checked = LS.get('review', false);
+  $('#settings').hidden = false;
+};
+$('#optReview').onchange = e => LS.set('review', e.target.checked);
+$('#btnCloseSettings').onclick = () => $('#settings').hidden = true;
+$('#btnRetry').onclick = () => { $('#settings').hidden = true; pump(); };
+$('#btnTest').onclick = async () => {
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${cfg.token}/getChat?chat_id=${encodeURIComponent(cfg.chat)}`);
+    const j = await r.json();
+    toast(j.ok ? `✅ Conectado a «${j.result.title}»` : '❌ ' + j.description);
+  } catch { toast('❌ Sin internet'); }
+};
+$('#btnUnlink').onclick = () => {
+  if (!confirm('¿Desvincular? Tendrás que volver a escanear el QR. Lo que esté en cola se pierde.')) return;
+  ['cfg', 'courses', 'dest', 'review', 'noteDraft'].forEach(LS.del);
+  indexedDB.deleteDatabase('fastchat'); location.reload();
+};
+
+/* ================= arranque ================= */
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+showDest();
+if (!cfg) $('#setup').hidden = false;
+else {
+  updateBadge().then(pump);
+  if (sessionStorage.getItem('justLinked')) { sessionStorage.removeItem('justLinked'); toast('✅ Vinculado. Menú ⋮ → «Instalar app»'); }
+}
+</script>
+</body>
+</html>
