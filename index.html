@@ -29,7 +29,38 @@
   #status.ok{color:var(--ok)} #status.err{color:var(--err)} #status.warn{color:var(--warn)}
   .icon-btn{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:var(--muted)}
 
-  #stage{position:relative;flex:1;touch-action:none}
+  #stage{position:relative;flex:1;min-height:0}
+  /* conversación del curso elegido (como un chat) */
+  #feed{position:absolute;left:0;right:0;top:0;bottom:178px;overflow-y:auto;padding:6px 12px 14px;
+    mask-image:linear-gradient(transparent 0,#000 18px,#000 calc(100% - 26px),transparent)}
+  #feed .day{text-align:center;margin:12px 0 8px}
+  #feed .day span{font-size:11.5px;color:#b8c7d1;background:#16202a;padding:4px 10px;border-radius:8px}
+  .msg{display:flex;margin:3px 0} .msg.out{justify-content:flex-end}
+  .bub{max-width:78%;border-radius:12px;padding:5px;background:#16202a;position:relative}
+  .msg.out .bub{background:#0e3440}
+  .bub img{display:block;width:230px;max-width:100%;max-height:300px;object-fit:cover;border-radius:8px}
+  .bub .tx{padding:4px 7px 2px;white-space:pre-wrap;word-break:break-word;font-size:14.5px;-webkit-user-select:text;user-select:text}
+  .bub .fl{display:flex;align-items:center;gap:10px;padding:8px;min-width:190px}
+  .bub .fl .ic{width:36px;height:36px;border-radius:9px;background:#0006;color:var(--cyan);display:grid;place-items:center;flex:none}
+  .bub .fl div{min-width:0;font-size:13.5px} .bub .fl small{color:var(--muted)}
+  .bub .mt{display:flex;justify-content:flex-end;align-items:center;gap:3px;font-size:10.5px;color:#9fb0bc;padding:2px 5px 0}
+  .bub.ph .mt{position:absolute;right:10px;bottom:9px;background:#0009;color:#fff;border-radius:8px;padding:1px 6px}
+  .tk{width:16px;height:11px} .tk.blue{color:var(--cyan)}
+  .feed-empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:var(--muted);font-size:13.5px;padding:30px}
+  #backdrop{position:absolute;inset:0;background:rgba(5,8,12,.78);opacity:0;pointer-events:none;transition:opacity .18s}
+  #stage.open #backdrop{opacity:1}
+  /* revisar antes de enviar (como WhatsApp) */
+  #review{background:#000;z-index:6}
+  #rvBox{flex:1;display:grid;place-items:center;min-height:0;overflow:hidden}
+  #rvBox img,#rvBox video{max-width:100%;max-height:100%}
+  .rvbar{display:flex;align-items:center;gap:10px;padding:10px 12px calc(env(safe-area-inset-bottom) + 14px);background:linear-gradient(transparent,#000c 30%)}
+  #rvCaption{flex:1;min-width:0;height:48px;border-radius:24px;border:0;background:#1c2632;color:var(--fg);padding:0 18px;font-size:15px;outline:none;
+    -webkit-user-select:text;user-select:text}
+  .rvdest{display:flex;align-items:center;gap:6px;padding:0 14px 8px;font-size:13px;color:var(--muted)}
+  .rvdest b{color:var(--cyan);font-weight:600}
+  .round{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;flex:none}
+  .round.send{background:var(--cyan);color:#06222b}
+  .round.more{background:#1c2632;color:var(--fg)}
   #core{position:absolute;left:50%;bottom:34px;width:118px;height:118px;margin-left:-59px;border-radius:50%;
     touch-action:none;transition:transform .2s}
   #core svg{width:100%;height:100%;overflow:visible}
@@ -149,6 +180,8 @@
   </header>
 
   <div id="stage">
+    <div id="feed"></div>
+    <div id="backdrop"></div>
     <span class="edge l">‹</span><span class="edge r">›</span>
     <button id="core" aria-label="Tocar: foto. Mantener: más opciones">
       <svg viewBox="0 0 120 120">
@@ -213,6 +246,24 @@
   <div class="actions" id="pvActions"></div>
 </div>
 
+<!-- ================= REVISAR ANTES DE ENVIAR ================= -->
+<div class="layer" id="review" hidden>
+  <div class="topbar">
+    <button class="icon-btn" id="rvClose" aria-label="Repetir" style="color:#fff">
+      <svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="t">Repetir</div>
+  </div>
+  <div id="rvBox"></div>
+  <div class="rvdest">Para: <b id="rvDest"></b></div>
+  <div class="rvbar">
+    <button class="round more" id="rvMore" aria-label="Enviar y tomar otra" title="Enviar y tomar otra">
+      <svg class="i" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><path d="M12 10v6M9 13h6"/></svg></button>
+    <input id="rvCaption" placeholder="Añade un comentario…" autocomplete="off" enterkeyhint="send">
+    <button class="round send" id="rvSend" aria-label="Enviar">
+      <svg class="i" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2.5-6.5z"/></svg></button>
+  </div>
+</div>
+
 <!-- ================= RECIBIDOS DE LA LAPTOP ================= -->
 <div class="layer" id="inbox" hidden>
   <div class="topbar">
@@ -229,7 +280,7 @@
 <div class="sheet" id="settings" hidden>
   <h2>Ajustes</h2>
   <p id="setInfo"></p>
-  <label class="row"><span>Revisar antes de enviar<br><small style="color:var(--muted)">Muestra la foto o el video y tú decides si se envía</small></span>
+  <label class="row"><span>Revisar antes de enviar (como WhatsApp)<br><small style="color:var(--muted)">Apágalo para el modo rápido: se envía apenas tomas la foto</small></span>
     <input type="checkbox" id="optReview"></label>
   <button class="btn primary" id="btnTest">Probar conexión</button>
   <button class="btn" id="btnRetry">Reintentar envíos pendientes</button>
@@ -310,7 +361,7 @@ let matches = [], sel = 0;
 function showDest() { destInput.placeholder = label(dest); }
 function setDest(d) {
   if (!destinations().includes(d)) { courses.push(d); LS.set('courses', courses); }
-  dest = d; LS.set('dest', d); showDest();
+  dest = d; LS.set('dest', d); showDest(); const f = $('#feed'); if (f) delete f.dataset.ok; renderFeed();
   destInput.value = ''; destInput.blur(); destList.hidden = true;
   toast('Destino: ' + label(d)); vib(10);
 }
@@ -505,7 +556,7 @@ $('#shutter').onclick = async () => {
       $('#flash').classList.add('on'); setTimeout(() => $('#flash').classList.remove('on'), 60); vib(25);
       const blob = await grabPhoto();
       const item = { kind: 'doc', folder: dest, blob, name: `IMG_${stamp()}.jpg` };
-      if (LS.get('review', false)) review(item); else { await enqueue(item); camShots++; $('#camCount').textContent = `${camShots} enviada(s)`; }
+      if (LS.get('review', true)) review(item); else { await enqueue(item); camShots++; $('#camCount').textContent = `${camShots} enviada(s)`; }
     } catch (e) { toast('⚠ ' + e.message); }
     finally { busyShot = false; }
     return;
@@ -524,7 +575,7 @@ $('#shutter').onclick = async () => {
     clearInterval(recTimer); $('#shutter').classList.remove('rec'); $('#recTime').textContent = '';
     const blob = new Blob(recChunks, { type: recorder.mimeType || 'video/webm' });
     const item = { kind: 'doc', folder: dest, blob, name: `VID_${stamp()}.${ext}` };
-    if (LS.get('review', false)) review(item); else { await enqueue(item); toast('🎥 Video en camino'); }
+    if (LS.get('review', true)) review(item); else { await enqueue(item); toast('🎥 Video en camino'); }
   };
   recorder.start(1000);
   recStart = Date.now(); $('#shutter').classList.add('rec'); vib(30);
@@ -595,12 +646,31 @@ function showPreview(item, title, buttons) {
   $('#preview').hidden = false;
 }
 function closePreview() { $('#preview').hidden = true; $('#pvBox').innerHTML = ''; if (pvUrl) { URL.revokeObjectURL(pvUrl); pvUrl = null; } }
+/* revisar antes de enviar, como en WhatsApp: ✕ repetir · comentario · enviar (vuelve al chat) · enviar y tomar otra */
+let rvItem = null, rvUrl = null;
 function review(item) {
-  showPreview(item, `¿Enviar a <b style="color:var(--cyan)">${esc(label(item.folder))}</b>?`, [
-    ['Repetir', '', closePreview],
-    ['Enviar', 'primary', async () => { closePreview(); await enqueue(item); camShots++; $('#camCount').textContent = `${camShots} enviada(s)`; }],
-  ]);
+  rvItem = item;
+  if (rvUrl) URL.revokeObjectURL(rvUrl);
+  rvUrl = URL.createObjectURL(item.blob);
+  $('#rvBox').innerHTML = (item.blob.type || '').startsWith('video/')
+    ? `<video src="${rvUrl}" controls playsinline autoplay loop></video>` : `<img src="${rvUrl}" alt="">`;
+  $('#rvDest').textContent = label(item.folder);
+  $('#rvCaption').value = '';
+  $('#review').hidden = false;
 }
+function closeReview() { $('#review').hidden = true; $('#rvBox').innerHTML = ''; if (rvUrl) { URL.revokeObjectURL(rvUrl); rvUrl = null; } rvItem = null; }
+async function reviewSend(otra) {
+  if (!rvItem) return;
+  const it = rvItem; it.caption = $('#rvCaption').value.trim();
+  closeReview(); vib(15);
+  await enqueue(it);
+  if (otra) { camShots++; $('#camCount').textContent = `${camShots} enviada(s)`; }
+  else closeCam();                    // vuelve al chat del curso para ver la burbuja
+}
+$('#rvClose').onclick = closeReview;
+$('#rvSend').onclick = () => reviewSend(false);
+$('#rvMore').onclick = () => reviewSend(true);
+$('#rvCaption').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); reviewSend(false); } });
 let lastItem = null;
 $('#thumb').onclick = e => {
   e.preventDefault(); e.stopPropagation();
@@ -671,12 +741,25 @@ async function refreshInbox() {
     if (pin && pin.document && (pin.caption || '').startsWith('🗂')) {
       const data = JSON.parse(await (await downloadFile(pin.document.file_id)).text());
       inbox = (data.items || []).sort((a, b) => b.ts - a.ts);
+      const recib = new Set(data.recibidos || []);            // lo que la laptop ya guardó → ✓✓
+      if (recib.size) for (const h of await DB.hall()) if (h.status === 'enviado' && recib.has(h.msg)) { h.status = 'recibido'; await DB.hput(h); }
     } else inbox = [];
     LS.set('inbox', inbox);
     const vivos = new Set(inbox.map(i => i.msg));
     [...hiddenRx].forEach(m => { if (!vivos.has(m)) hiddenRx.delete(m); }); LS.set('hiddenRx', [...hiddenRx]);
   } catch (e) { console.warn('recibidos', e); }
-  finally { rxLoading = false; renderInboxBadge(); if (!$('#inbox').hidden) renderInbox(); }
+  finally { rxLoading = false; renderInboxBadge(); if (!$('#inbox').hidden) renderInbox(); renderFeed(); }
+}
+// Después de enviar, pregunta seguido (cada 4 s, máx. 3 min) hasta ver el ✓✓ de la laptop
+let vigT = null, vigHasta = 0;
+function vigilarRecibidos() {
+  vigHasta = Date.now() + 180000;
+  if (vigT) return;
+  vigT = setInterval(async () => {
+    const pend = (await DB.hall()).some(h => h.status === 'enviado' && Date.now() - h.ts < 600000);
+    if (!pend || Date.now() > vigHasta) { clearInterval(vigT); vigT = null; return; }
+    if (!document.hidden) refreshInbox();
+  }, 4000);
 }
 function renderInboxBadge() {
   const n = rxVisible().filter(it => !seenRx.has(it.msg)).length, b = $('#inboxBadge');
@@ -730,17 +813,22 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
 setInterval(() => { if (!document.hidden) refreshInbox(); }, 60000);
 
 /* ================= cola persistente (IndexedDB) ================= */
+// 'q' = cola de envíos (se vacía al enviar) · 'h' = historial del chat (solo miniaturas pequeñas, se limpia solo)
 const DB = (() => {
-  let dbp = null, mem = [], memId = 1, useMem = false;
+  let dbp = null, mem = { q: [], h: [] }, memId = 1, useMem = false;
   const open = () => dbp ||= new Promise((res, rej) => {
-    const r = indexedDB.open('fastchat', 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('q', { keyPath: 'id', autoIncrement: true });
+    const r = indexedDB.open('fastchat', 2);
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      if (!db.objectStoreNames.contains('q')) db.createObjectStore('q', { keyPath: 'id', autoIncrement: true });
+      if (!db.objectStoreNames.contains('h')) db.createObjectStore('h', { keyPath: 'id', autoIncrement: true });
+    };
     r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
   });
-  async function tx(mode, fn) {
+  async function tx(store, mode, fn) {
     const db = await open();
     return new Promise((res, rej) => {
-      const t = db.transaction('q', mode), req = fn(t.objectStore('q'));
+      const t = db.transaction(store, mode), req = fn(t.objectStore(store));
       t.oncomplete = () => res(req && req.result); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
     });
   }
@@ -749,23 +837,113 @@ const DB = (() => {
     return m(...a);
   };
   return {
-    add: wrap(it => tx('readwrite', s => s.add(it)), it => { mem.push({ ...it, id: memId++ }); }),
-    del: wrap(id => tx('readwrite', s => s.delete(id)), id => { mem = mem.filter(x => x.id !== id); }),
-    first: wrap(() => tx('readonly', s => s.getAll(null, 1)).then(a => a[0]), () => mem[0]),
-    count: wrap(() => tx('readonly', s => s.count()), () => mem.length),
+    add: wrap(it => tx('q', 'readwrite', s => s.add(it)), it => { mem.q.push({ ...it, id: memId++ }); }),
+    del: wrap(id => tx('q', 'readwrite', s => s.delete(id)), id => { mem.q = mem.q.filter(x => x.id !== id); }),
+    first: wrap(() => tx('q', 'readonly', s => s.getAll(null, 1)).then(a => a[0]), () => mem.q[0]),
+    count: wrap(() => tx('q', 'readonly', s => s.count()), () => mem.q.length),
+    hadd: wrap(it => tx('h', 'readwrite', s => s.add(it)), it => { const id = memId++; mem.h.push({ ...it, id }); return id; }),
+    hput: wrap(it => tx('h', 'readwrite', s => s.put(it)), it => { mem.h = mem.h.map(x => x.id === it.id ? it : x); }),
+    hget: wrap(id => tx('h', 'readonly', s => s.get(id)), id => mem.h.find(x => x.id === id)),
+    hall: wrap(() => tx('h', 'readonly', s => s.getAll()), () => mem.h.slice()),
+    hdel: wrap(id => tx('h', 'readwrite', s => s.delete(id)), id => { mem.h = mem.h.filter(x => x.id !== id); }),
   };
 })();
+
+async function miniatura(blob) {
+  try {
+    const bmp = await createImageBitmap(blob);
+    const w = Math.min(420, bmp.width), h = Math.round(bmp.height * w / bmp.width);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    c.getContext('2d').drawImage(bmp, 0, 0, w, h); bmp.close && bmp.close();
+    return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.7));
+  } catch { return null; }
+}
 
 let thumbUrl = null;
 async function enqueue(item) {
   item.ts = Date.now();
   lastItem = item;
-  if (item.blob && (item.blob.type || '').startsWith('image/')) {
+  const esImg = item.blob && (item.blob.type || '').startsWith('image/');
+  if (esImg) {
     if (thumbUrl) URL.revokeObjectURL(thumbUrl);
     thumbUrl = URL.createObjectURL(item.blob); $('#thumb').style.backgroundImage = `url(${thumbUrl})`;
   }
-  await DB.add(item); updateBadge(); pump();
+  const h = {
+    folder: item.folder, kind: esImg ? 'img' : item.blob && (item.blob.type || '').startsWith('video/') ? 'video' : item.kind,
+    name: item.name || '', text: item.text || (item.kind === 'loc' ? `${item.lat.toFixed(5)}, ${item.lon.toFixed(5)}` : ''),
+    caption: item.caption || '', ts: item.ts, status: 'cola', thumb: esImg ? await miniatura(item.blob) : null,
+  };
+  item.hid = await DB.hadd(h);
+  await DB.add(item); updateBadge(); renderFeed(); pump();
 }
+
+/* ================= chat del curso (lo enviado a la derecha, lo recibido de la laptop a la izquierda) ================= */
+const TK = '<svg class="tk" viewBox="0 0 16 11" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 6l3 3 6-7"/></svg>';
+const TK2 = '<svg class="tk blue" viewBox="0 0 16 11" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 6l3 3 6-7M6 9l1 1 7-8"/></svg>';
+const CLOCK = '<svg class="tk" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1"/></svg>';
+let feedUrls = [], feedItems = [];
+const dia = ms => {
+  const d = new Date(ms), hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const n = Math.round((hoy - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5);
+  return n === 0 ? 'Hoy' : n === 1 ? 'Ayer' : d.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'short' });
+};
+const hm = ms => new Date(ms).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
+async function renderFeed() {
+  const box = $('#feed'); if (!box) return;
+  const all = await DB.hall();
+  // limpieza: máximo 14 días y 80 mensajes por curso
+  const limite = Date.now() - 14 * 864e5, porCurso = {};
+  for (const h of all.slice().reverse()) {
+    porCurso[h.folder] = (porCurso[h.folder] || 0) + 1;
+    if ((h.ts < limite || porCurso[h.folder] > 80) && h.status !== 'cola') DB.hdel(h.id);
+  }
+  const mine = all.filter(h => h.folder === dest && h.ts >= limite).map(h => ({ ...h, side: 'out' }));
+  const rx = rxVisible().filter(it => it.carpeta === dest).map(it => ({ side: 'in', rx: it, ts: it.ts * 1000 }));
+  feedItems = [...mine, ...rx].sort((a, b) => a.ts - b.ts).slice(-80);
+  feedUrls.forEach(u => URL.revokeObjectURL(u)); feedUrls = [];
+  if (!feedItems.length) {
+    box.innerHTML = `<div class="feed-empty">Toca el logo para mandar una foto a<br><b style="color:var(--cyan)">${esc(label(dest))}</b></div>`;
+    return;
+  }
+  const near = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+  let html = '', lastDay = '';
+  feedItems.forEach((m, i) => {
+    const dl = dia(m.ts);
+    if (dl !== lastDay) { lastDay = dl; html += `<div class="day"><span>${esc(dl)}</span></div>`; }
+    let inner, ph = false, meta;
+    if (m.side === 'in') {
+      const it = m.rx;
+      meta = `<div class="mt">${hm(m.ts)}</div>`;
+      inner = `<div class="fl"><span class="ic"><svg class="i" viewBox="0 0 24 24">${ICONS[rxKind(it.tipo)]}</svg></span><div>${esc(it.nombre)}<br><small>De la laptop · toca para ver</small></div></div>`;
+    } else {
+      const tick = m.status === 'recibido' ? TK2 : m.status === 'enviado' ? TK : CLOCK;
+      meta = `<div class="mt">${hm(m.ts)} ${tick}</div>`;
+      if (m.kind === 'img' && m.thumb) {
+        const u = URL.createObjectURL(m.thumb); feedUrls.push(u);
+        inner = `<img src="${u}" alt="">` + (m.caption ? `<div class="tx">${esc(m.caption)}</div>` : '');
+        ph = !m.caption;
+      } else if (m.kind === 'note') inner = `<div class="tx">${esc(m.text)}</div>`;
+      else if (m.kind === 'loc') inner = `<div class="fl"><span class="ic"><svg class="i" viewBox="0 0 24 24">${ICONS.ubicacion}</svg></span><div>Ubicación<br><small>${esc(m.text)}</small></div></div>`;
+      else inner = `<div class="fl"><span class="ic"><svg class="i" viewBox="0 0 24 24">${ICONS[m.kind === 'video' ? 'video' : 'archivo']}</svg></span><div>${esc(m.name)}</div></div>` + (m.caption ? `<div class="tx">${esc(m.caption)}</div>` : '');
+    }
+    html += `<div class="msg ${m.side}" data-i="${i}"><div class="bub${ph ? ' ph' : ''}">${inner}${meta}</div></div>`;
+  });
+  box.innerHTML = html;
+  if (near || !box.dataset.ok) {
+    const bajar = () => { box.scrollTop = box.scrollHeight; };
+    bajar(); box.dataset.ok = 1;
+    box.querySelectorAll('img').forEach(im => im.complete || im.addEventListener('load', bajar, { once: true }));
+  }
+}
+$('#feed').addEventListener('click', e => {
+  const el = e.target.closest('.msg'); if (!el) return;
+  const m = feedItems[+el.dataset.i];
+  if (m.side === 'in') { openRx(m.rx); return; }
+  if (m.kind === 'img' && m.thumb) {
+    history.pushState({ layer: 'pv' }, '');
+    showPreview({ blob: m.thumb, name: m.name }, `${esc(label(m.folder))} · ${hm(m.ts)} — la foto completa está en tu laptop`, [['Cerrar', '', () => history.back()]]);
+  }
+});
 
 let busy = false, sent = 0, fatal = null;
 async function api(method, body) {
@@ -795,7 +973,7 @@ async function send(it) {
   }
   let blob = it.blob, name = it.name;
   if (it.kind === 'note') { blob = new Blob([it.text], { type: 'text/plain' }); name = `NOTA_${stamp(new Date(it.ts))}.txt`; }
-  fd.append('caption', it.folder);
+  fd.append('caption', it.folder + (it.caption ? '\n' + it.caption : ''));
   fd.append('document', blob, name);
   return api('sendDocument', fd);
 }
@@ -806,7 +984,11 @@ async function pump() {
     for (;;) {
       const it = await DB.first(); if (!it) break;
       setStatus(`Enviando → ${label(it.folder)}…`);
-      try { await send(it); await DB.del(it.id); sent++; }
+      try {
+        const r = await send(it); await DB.del(it.id); sent++;
+        if (it.hid) { const h = await DB.hget(it.hid); if (h) { h.status = 'enviado'; h.msg = r && r.message_id; await DB.hput(h); } }
+        renderFeed(); vigilarRecibidos();
+      }
       catch (e) {
         if (e.fatal) { fatal = e.message; break; }
         if (e.net || !navigator.onLine) break;
@@ -837,7 +1019,7 @@ function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add
 
 $('#btnSettings').onclick = async () => {
   $('#setInfo').textContent = `${destinations().length} destinos · ${await DB.count()} en cola`;
-  $('#optReview').checked = LS.get('review', false);
+  $('#optReview').checked = LS.get('review', true);
   $('#settings').hidden = false;
 };
 $('#optReview').onchange = e => LS.set('review', e.target.checked);
@@ -862,7 +1044,8 @@ showDest();
 if (!cfg) $('#setup').hidden = false;
 else {
   updateBadge().then(pump);
-  renderInboxBadge(); refreshInbox();
+  renderInboxBadge(); renderFeed(); refreshInbox();
+  DB.hall().then(hs => { if (hs.some(h => h.status === 'enviado')) vigilarRecibidos(); });
   if (sessionStorage.getItem('justLinked')) { sessionStorage.removeItem('justLinked'); toast('✅ Vinculado. Menú ⋮ → «Instalar app»'); }
 }
 </script>
