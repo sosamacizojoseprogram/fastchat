@@ -99,7 +99,7 @@
   .btn.primary{background:var(--cyan);color:#06222b}
   .btn.danger{color:var(--err)}
 
-  #preview{background:#000}
+  #preview{background:#000;z-index:7}
   #pvBox{flex:1;display:grid;place-items:center;overflow:hidden;padding:8px}
   #pvBox img,#pvBox video{max-width:100%;max-height:100%;border-radius:10px}
   #pvBox .file{color:var(--muted);text-align:center;padding:30px}
@@ -112,6 +112,20 @@
   .row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:14px;background:#1c2632;text-align:left}
   .row input{width:22px;height:22px;accent-color:var(--cyan)}
 
+  #inboxBadge{position:absolute;top:2px;right:0;min-width:17px;height:17px;border-radius:9px;padding:0 4px;font-size:10px;
+    font-weight:700;background:var(--cyan);color:#06222b;display:none;place-items:center}
+  #inboxBadge.show{display:grid}
+  #inbox{background:var(--bg)}
+  #inboxList{flex:1;overflow-y:auto;padding:0 12px 20px}
+  #inboxList h3{margin:18px 6px 8px;font-size:12px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;font-weight:600}
+  .rx{display:flex;align-items:center;gap:12px;padding:12px;border-radius:14px;background:var(--panel);border:1px solid var(--line);margin-bottom:8px}
+  .rx .ic{width:40px;height:40px;border-radius:11px;background:#1c2632;color:var(--cyan);display:grid;place-items:center;flex:none}
+  .rx .tx{flex:1;min-width:0} .rx .tx div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rx .tx small{color:var(--muted);font-size:12px}
+  .rx.unseen{border-color:var(--cyan)}
+  .rx .dot{width:8px;height:8px;border-radius:50%;background:var(--cyan);flex:none}
+  #pvBox canvas{max-width:100%;display:block;margin:0 auto 10px;border-radius:6px;background:#fff}
+  #pvBox.pdf{display:block;overflow-y:auto}
   #toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 56px);transform:translateX(-50%);z-index:20;
     background:#121820ee;border:1px solid var(--line);padding:9px 15px;border-radius:999px;font-size:14px;opacity:0;
     transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center}
@@ -125,6 +139,10 @@
   <header>
     <div class="brand">FASTCHAT</div>
     <div id="status">Listo</div>
+    <button class="icon-btn" id="btnInbox" aria-label="Recibidos de la laptop" style="position:relative">
+      <svg class="i" viewBox="0 0 24 24"><path d="M3 13l3-8h12l3 8v6H3z"/><path d="M3 13h5l1 2h6l1-2h5"/></svg>
+      <span id="inboxBadge"></span>
+    </button>
     <button class="icon-btn" id="btnSettings" aria-label="Ajustes">
       <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
     </button>
@@ -193,6 +211,18 @@
   <div class="topbar"><div class="t" id="pvTitle"></div></div>
   <div id="pvBox"></div>
   <div class="actions" id="pvActions"></div>
+</div>
+
+<!-- ================= RECIBIDOS DE LA LAPTOP ================= -->
+<div class="layer" id="inbox" hidden>
+  <div class="topbar">
+    <button class="icon-btn" id="inboxClose" aria-label="Cerrar">
+      <svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="t">Recibidos de la laptop <small style="display:block;font-size:11px">Se ven aquí sin guardarse en el teléfono</small></div>
+    <button class="icon-btn" id="inboxRefresh" aria-label="Actualizar">
+      <svg class="i" viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg></button>
+  </div>
+  <div id="inboxList"></div>
 </div>
 
 <!-- ================= AJUSTES / VINCULAR ================= -->
@@ -546,13 +576,17 @@ $('#pickFile').onchange = e => { const f = [...e.target.files]; e.target.value =
 let pvUrl = null;
 function showPreview(item, title, buttons) {
   if (pvUrl) URL.revokeObjectURL(pvUrl);
-  const box = $('#pvBox'); box.innerHTML = '';
+  const box = $('#pvBox'); box.innerHTML = ''; box.className = '';
   if (item.blob) {
     pvUrl = URL.createObjectURL(item.blob);
     const type = item.blob.type || '';
     if (type.startsWith('image/')) box.innerHTML = `<img src="${pvUrl}" alt="">`;
     else if (type.startsWith('video/')) box.innerHTML = `<video src="${pvUrl}" controls playsinline autoplay></video>`;
-    else box.innerHTML = `<div class="file">📎 ${esc(item.name)}</div>`;
+    else if (type === 'application/pdf') { box.className = 'pdf'; renderPdf(item.blob, box); }
+    else if (type.startsWith('text/') || type === 'application/json') {
+      item.blob.text().then(t => { box.innerHTML = `<div class="file" style="white-space:pre-wrap;text-align:left;color:var(--fg)">${esc(t)}</div>`; });
+    }
+    else box.innerHTML = `<div class="file">📎 ${esc(item.name)}<br><small>Este tipo de archivo no se puede ver aquí.</small></div>`;
   } else if (item.kind === 'note') box.innerHTML = `<div class="file" style="white-space:pre-wrap;text-align:left">${esc(item.text)}</div>`;
   else if (item.kind === 'loc') box.innerHTML = `<div class="file">📍 ${item.lat.toFixed(5)}, ${item.lon.toFixed(5)}</div>`;
   $('#pvTitle').innerHTML = title;
@@ -575,9 +609,125 @@ $('#thumb').onclick = e => {
 };
 
 window.addEventListener('popstate', () => {
+  if (!$('#preview').hidden) { closePreview(); return; }
   if (!$('#cam').hidden) closeCam(true);
   if (!$('#note').hidden) closeNote(true);
+  if (!$('#inbox').hidden) $('#inbox').hidden = true;
 });
+
+/* ================= visor de PDF (pdf.js, se carga solo cuando hace falta) ================= */
+let pdfjsP = null;
+function loadPdfjs() {
+  return pdfjsP ||= new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = () => { pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; res(pdfjsLib); };
+    s.onerror = () => { pdfjsP = null; rej(new Error('No pude cargar el visor de PDF')); };
+    document.head.appendChild(s);
+  });
+}
+async function renderPdf(blob, box) {
+  box.innerHTML = '<div class="file">Abriendo PDF…</div>';
+  try {
+    const lib = await loadPdfjs();
+    const pdf = await lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+    box.innerHTML = '';
+    const w = box.clientWidth - 16;
+    for (let n = 1; n <= pdf.numPages; n++) {
+      if (box.hidden || $('#preview').hidden) break;
+      const page = await pdf.getPage(n);
+      const vp1 = page.getViewport({ scale: 1 });
+      const scale = (w / vp1.width) * (window.devicePixelRatio || 1);
+      const vp = page.getViewport({ scale });
+      const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height; c.style.width = w + 'px';
+      box.appendChild(c);
+      await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    }
+  } catch (e) { box.innerHTML = `<div class="file">⚠ ${esc(e.message)}</div>`; }
+}
+
+/* ================= recibidos de la laptop ================= */
+// La laptop mantiene fijado en el canal un índice JSON; aquí solo se guarda esa lista (no los archivos).
+let inbox = LS.get('inbox', []);
+const seenRx = new Set(LS.get('seenRx', []));
+const hiddenRx = new Set(LS.get('hiddenRx', []));
+const rxVisible = () => inbox.filter(it => !hiddenRx.has(it.msg));
+async function apiGet(method, params) {
+  const r = await fetch(`https://api.telegram.org/bot${cfg.token}/${method}?` + new URLSearchParams(params));
+  const j = await r.json(); if (!j.ok) throw new Error(j.description); return j.result;
+}
+async function downloadFile(fileId) {
+  const f = await apiGet('getFile', { file_id: fileId });
+  const r = await fetch(`https://api.telegram.org/file/bot${cfg.token}/${f.file_path}`);
+  if (!r.ok) throw new Error('No se pudo descargar');
+  return r.blob();
+}
+let rxLoading = false;
+async function refreshInbox() {
+  if (!cfg || rxLoading) return; rxLoading = true;
+  try {
+    const chat = await apiGet('getChat', { chat_id: cfg.chat });
+    const pin = chat.pinned_message;
+    if (pin && pin.document && (pin.caption || '').startsWith('🗂')) {
+      const data = JSON.parse(await (await downloadFile(pin.document.file_id)).text());
+      inbox = (data.items || []).sort((a, b) => b.ts - a.ts);
+    } else inbox = [];
+    LS.set('inbox', inbox);
+    const vivos = new Set(inbox.map(i => i.msg));
+    [...hiddenRx].forEach(m => { if (!vivos.has(m)) hiddenRx.delete(m); }); LS.set('hiddenRx', [...hiddenRx]);
+  } catch (e) { console.warn('recibidos', e); }
+  finally { rxLoading = false; renderInboxBadge(); if (!$('#inbox').hidden) renderInbox(); }
+}
+function renderInboxBadge() {
+  const n = rxVisible().filter(it => !seenRx.has(it.msg)).length, b = $('#inboxBadge');
+  b.textContent = n; b.classList.toggle('show', n > 0);
+}
+const rxKind = t => (t || '').startsWith('image/') ? 'galeria' : (t || '').startsWith('video/') ? 'video' :
+  (t || '').startsWith('text/') ? 'nota' : 'archivo';
+function renderInbox() {
+  const box = $('#inboxList'), list = rxVisible();
+  if (!list.length) { box.innerHTML = '<div class="file" style="color:var(--muted);text-align:center;padding:60px 20px">No hay nada de la laptop.<br><small>Arrastra archivos en la interfaz de FastChat de tu laptop.</small></div>'; return; }
+  const groups = {};
+  list.forEach(it => (groups[it.carpeta] ||= []).push(it));
+  box.innerHTML = '';
+  Object.entries(groups).forEach(([carpeta, its]) => {
+    box.insertAdjacentHTML('beforeend', `<h3>${esc(label(carpeta))}</h3>`);
+    its.forEach(it => {
+      const d = new Date(it.ts * 1000);
+      const el = document.createElement('div');
+      el.className = 'rx' + (seenRx.has(it.msg) ? '' : ' unseen');
+      el.innerHTML = `<span class="ic"><svg class="i" viewBox="0 0 24 24">${ICONS[rxKind(it.tipo)]}</svg></span>
+        <span class="tx"><div>${esc(it.nombre)}</div><small>${d.toLocaleDateString('es-PE', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })} · ${(it.bytes / 1048576).toFixed(1)} MB</small></span>
+        ${seenRx.has(it.msg) ? '' : '<span class="dot"></span>'}`;
+      el.onclick = () => openRx(it);
+      box.appendChild(el);
+    });
+  });
+}
+async function openRx(it) {
+  if (it.bytes > 20 * 1024 * 1024) { toast('Pesa más de 20 MB: Telegram no deja verlo desde la app'); return; }
+  toast('Abriendo…');
+  try {
+    let blob = await downloadFile(it.file_id);
+    if (!blob.type || blob.type === 'application/octet-stream') blob = new Blob([blob], { type: it.tipo });
+    seenRx.add(it.msg); LS.set('seenRx', [...seenRx]); renderInboxBadge(); renderInbox();
+    history.pushState({ layer: 'pv' }, '');
+    showPreview({ blob, name: it.nombre, folder: it.carpeta }, esc(it.nombre), [
+      ['Cerrar', '', () => history.back()],
+      ['Borrar', 'danger', async () => {
+        if (!confirm('¿Borrarlo? Desaparece del celular (en la laptop sigue guardado).')) return;
+        try { await apiGet('deleteMessage', { chat_id: cfg.chat, message_id: it.msg }); } catch {}
+        hiddenRx.add(it.msg); LS.set('hiddenRx', [...hiddenRx]);
+        history.back(); renderInbox(); renderInboxBadge(); toast('Borrado del celular');
+      }],
+    ]);
+  } catch (e) { toast('⚠ ' + e.message); }
+}
+$('#btnInbox').onclick = () => { $('#inbox').hidden = false; history.pushState({ layer: 'inbox' }, ''); renderInbox(); refreshInbox(); };
+$('#inboxClose').onclick = () => history.back();
+$('#inboxRefresh').onclick = () => { toast('Actualizando…'); refreshInbox(); };
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshInbox(); });
+setInterval(() => { if (!document.hidden) refreshInbox(); }, 60000);
 
 /* ================= cola persistente (IndexedDB) ================= */
 const DB = (() => {
@@ -712,6 +862,7 @@ showDest();
 if (!cfg) $('#setup').hidden = false;
 else {
   updateBadge().then(pump);
+  renderInboxBadge(); refreshInbox();
   if (sessionStorage.getItem('justLinked')) { sessionStorage.removeItem('justLinked'); toast('✅ Vinculado. Menú ⋮ → «Instalar app»'); }
 }
 </script>
