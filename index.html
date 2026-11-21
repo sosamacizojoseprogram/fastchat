@@ -45,7 +45,11 @@
   .bub .fl div{min-width:0;font-size:13.5px} .bub .fl small{color:var(--muted)}
   .bub .mt{display:flex;justify-content:flex-end;align-items:center;gap:3px;font-size:10.5px;color:#9fb0bc;padding:2px 5px 0}
   .bub.ph .mt{position:absolute;right:10px;bottom:9px;background:#0009;color:#fff;border-radius:8px;padding:1px 6px}
-  .tk{width:16px;height:11px} .tk.blue{color:var(--cyan)}
+  .tk{width:16px;height:11px} .tk.blue{color:#53bdeb}
+  .g4{display:grid;grid-template-columns:1fr 1fr;gap:3px;width:230px;max-width:100%}
+  .g4 .tile{position:relative;aspect-ratio:1;overflow:hidden;border-radius:6px}
+  .g4 .tile img{width:100%;height:100%;max-height:none;object-fit:cover;border-radius:0}
+  .g4 .more{position:absolute;inset:0;background:rgba(0,0,0,.55);display:grid;place-items:center;font-size:24px;font-weight:600;color:#fff}
   .feed-empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:var(--muted);font-size:13.5px;padding:30px}
   #backdrop{position:absolute;inset:0;background:rgba(5,8,12,.78);opacity:0;pointer-events:none;transition:opacity .18s}
   #stage.open #backdrop{opacity:1}
@@ -282,6 +286,8 @@
   <p id="setInfo"></p>
   <label class="row"><span>Revisar antes de enviar (como WhatsApp)<br><small style="color:var(--muted)">Apágalo para el modo rápido: se envía apenas tomas la foto</small></span>
     <input type="checkbox" id="optReview"></label>
+  <label class="row"><span>Calidad original<br><small style="color:var(--muted)">Más pesada y lenta. Apagado: fotos de hasta 2560 px, llegan mucho más rápido</small></span>
+    <input type="checkbox" id="optOriginal"></label>
   <button class="btn primary" id="btnTest">Probar conexión</button>
   <button class="btn" id="btnRetry">Reintentar envíos pendientes</button>
   <button class="btn danger" id="btnUnlink">Desvincular este celular</button>
@@ -741,8 +747,12 @@ async function refreshInbox() {
     if (pin && pin.document && (pin.caption || '').startsWith('🗂')) {
       const data = JSON.parse(await (await downloadFile(pin.document.file_id)).text());
       inbox = (data.items || []).sort((a, b) => b.ts - a.ts);
-      const recib = new Set(data.recibidos || []);            // lo que la laptop ya guardó → ✓✓
-      if (recib.size) for (const h of await DB.hall()) if (h.status === 'enviado' && recib.has(h.msg)) { h.status = 'recibido'; await DB.hput(h); }
+      const recib = new Set(data.recibidos || []);            // la laptop ya lo guardó → ✓✓ gris
+      const vist = new Set(data.vistos || []);                // lo abriste en la laptop → ✓✓ azul
+      for (const h of await DB.hall()) {
+        const nuevo = vist.has(h.msg) ? 'visto' : recib.has(h.msg) && h.status === 'enviado' ? 'recibido' : null;
+        if (nuevo && h.status !== nuevo && h.status !== 'visto') { h.status = nuevo; await DB.hput(h); }
+      }
     } else inbox = [];
     LS.set('inbox', inbox);
     const vivos = new Set(inbox.map(i => i.msg));
@@ -750,16 +760,16 @@ async function refreshInbox() {
   } catch (e) { console.warn('recibidos', e); }
   finally { rxLoading = false; renderInboxBadge(); if (!$('#inbox').hidden) renderInbox(); renderFeed(); }
 }
-// Después de enviar, pregunta seguido (cada 4 s, máx. 3 min) hasta ver el ✓✓ de la laptop
+// Después de enviar, pregunta seguido (cada 3 s, máx. 5 min) hasta ver ✓✓ y luego ✓✓ azul
 let vigT = null, vigHasta = 0;
 function vigilarRecibidos() {
-  vigHasta = Date.now() + 180000;
+  vigHasta = Date.now() + 300000;
   if (vigT) return;
   vigT = setInterval(async () => {
-    const pend = (await DB.hall()).some(h => h.status === 'enviado' && Date.now() - h.ts < 600000);
+    const pend = (await DB.hall()).some(h => (h.status === 'enviado' || h.status === 'recibido') && Date.now() - h.ts < 900000);
     if (!pend || Date.now() > vigHasta) { clearInterval(vigT); vigT = null; return; }
     if (!document.hidden) refreshInbox();
-  }, 4000);
+  }, 3000);
 }
 function renderInboxBadge() {
   const n = rxVisible().filter(it => !seenRx.has(it.msg)).length, b = $('#inboxBadge');
@@ -793,6 +803,11 @@ async function openRx(it) {
   try {
     let blob = await downloadFile(it.file_id);
     if (!blob.type || blob.type === 'application/octet-stream') blob = new Blob([blob], { type: it.tipo });
+    if (!seenRx.has(it.msg)) {        // avisa a la laptop que ya lo abriste → ✓✓ azul allá
+      const fd = new FormData(); fd.append('chat_id', cfg.chat); fd.append('message_id', it.msg);
+      fd.append('caption', '📤 ' + it.carpeta + ' ✓visto');
+      api('editMessageCaption', fd).catch(() => {});
+    }
     seenRx.add(it.msg); LS.set('seenRx', [...seenRx]); renderInboxBadge(); renderInbox();
     history.pushState({ layer: 'pv' }, '');
     showPreview({ blob, name: it.nombre, folder: it.carpeta }, esc(it.nombre), [
@@ -859,9 +874,23 @@ async function miniatura(blob) {
   } catch { return null; }
 }
 
+// Fotos más livianas = llegan más rápido (máx. 2560 px, se leen igual de bien). En ⚙ se puede pedir calidad original.
+async function comprimir(blob) {
+  if (LS.get('original', false) || !/^image\/(jpeg|png|webp)/.test(blob.type || '') || blob.size < 900 * 1024) return blob;
+  try {
+    const bmp = await createImageBitmap(blob);
+    const k = Math.min(1, 2560 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); bmp.close && bmp.close();
+    const out = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+    return out && out.size < blob.size ? out : blob;
+  } catch { return blob; }
+}
+
 let thumbUrl = null;
 async function enqueue(item) {
   item.ts = Date.now();
+  if (item.blob && (item.blob.type || '').startsWith('image/')) item.blob = await comprimir(item.blob);
   lastItem = item;
   const esImg = item.blob && (item.blob.type || '').startsWith('image/');
   if (esImg) {
@@ -880,6 +909,10 @@ async function enqueue(item) {
 /* ================= chat del curso (lo enviado a la derecha, lo recibido de la laptop a la izquierda) ================= */
 const TK = '<svg class="tk" viewBox="0 0 16 11" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 6l3 3 6-7"/></svg>';
 const TK2 = '<svg class="tk blue" viewBox="0 0 16 11" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 6l3 3 6-7M6 9l1 1 7-8"/></svg>';
+const TK2G = '<svg class="tk" viewBox="0 0 16 11" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 6l3 3 6-7M6 9l1 1 7-8"/></svg>';
+// 🕓 en cola · ✓ enviado · ✓✓ gris = la laptop lo guardó · ✓✓ azul = lo abriste en la laptop
+const tickDe = s => s === 'visto' ? TK2 : s === 'recibido' ? TK2G : s === 'enviado' ? TK : CLOCK;
+const ORDEN = { cola: 0, enviado: 1, recibido: 2, visto: 3 };
 const CLOCK = '<svg class="tk" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1"/></svg>';
 let feedUrls = [], feedItems = [];
 const dia = ms => {
@@ -907,17 +940,32 @@ async function renderFeed() {
   }
   const near = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
   let html = '', lastDay = '';
-  feedItems.forEach((m, i) => {
+  const esFoto = m => m.side === 'out' && m.kind === 'img' && m.thumb && !m.caption;
+  for (let i = 0; i < feedItems.length; i++) {
+    const m = feedItems[i];
     const dl = dia(m.ts);
     if (dl !== lastDay) { lastDay = dl; html += `<div class="day"><span>${esc(dl)}</span></div>`; }
+    // 3 o más fotos seguidas (menos de 2 min entre una y otra) → álbum
+    let j = i;
+    if (esFoto(m)) while (j + 1 < feedItems.length && esFoto(feedItems[j + 1]) && feedItems[j + 1].ts - feedItems[j].ts <= 120000 && dia(feedItems[j + 1].ts) === dl) j++;
+    if (j - i + 1 >= 3) {
+      const grupo = feedItems.slice(i, j + 1);
+      const peor = grupo.reduce((a, g) => ORDEN[g.status] < ORDEN[a] ? g.status : a, 'visto');
+      const tiles = grupo.slice(0, 4).map((g, n) => {
+        const u = URL.createObjectURL(g.thumb); feedUrls.push(u);
+        return `<div class="tile" data-i="${i + n}"><img src="${u}" alt="">${n === 3 && grupo.length > 4 ? `<div class="more">+${grupo.length - 3}</div>` : ''}</div>`;
+      }).join('');
+      html += `<div class="msg out" data-i="${i}"><div class="bub ph album"><div class="g4">${tiles}</div><div class="mt">${hm(grupo[grupo.length - 1].ts)} ${tickDe(peor)}</div></div></div>`;
+      i = j;
+      continue;
+    }
     let inner, ph = false, meta;
     if (m.side === 'in') {
       const it = m.rx;
       meta = `<div class="mt">${hm(m.ts)}</div>`;
       inner = `<div class="fl"><span class="ic"><svg class="i" viewBox="0 0 24 24">${ICONS[rxKind(it.tipo)]}</svg></span><div>${esc(it.nombre)}<br><small>De la laptop · toca para ver</small></div></div>`;
     } else {
-      const tick = m.status === 'recibido' ? TK2 : m.status === 'enviado' ? TK : CLOCK;
-      meta = `<div class="mt">${hm(m.ts)} ${tick}</div>`;
+      meta = `<div class="mt">${hm(m.ts)} ${tickDe(m.status)}</div>`;
       if (m.kind === 'img' && m.thumb) {
         const u = URL.createObjectURL(m.thumb); feedUrls.push(u);
         inner = `<img src="${u}" alt="">` + (m.caption ? `<div class="tx">${esc(m.caption)}</div>` : '');
@@ -927,7 +975,7 @@ async function renderFeed() {
       else inner = `<div class="fl"><span class="ic"><svg class="i" viewBox="0 0 24 24">${ICONS[m.kind === 'video' ? 'video' : 'archivo']}</svg></span><div>${esc(m.name)}</div></div>` + (m.caption ? `<div class="tx">${esc(m.caption)}</div>` : '');
     }
     html += `<div class="msg ${m.side}" data-i="${i}"><div class="bub${ph ? ' ph' : ''}">${inner}${meta}</div></div>`;
-  });
+  }
   box.innerHTML = html;
   if (near || !box.dataset.ok) {
     const bajar = () => { box.scrollTop = box.scrollHeight; };
@@ -937,7 +985,8 @@ async function renderFeed() {
 }
 $('#feed').addEventListener('click', e => {
   const el = e.target.closest('.msg'); if (!el) return;
-  const m = feedItems[+el.dataset.i];
+  const tile = e.target.closest('.tile');
+  const m = feedItems[+(tile || el).dataset.i];
   if (m.side === 'in') { openRx(m.rx); return; }
   if (m.kind === 'img' && m.thumb) {
     history.pushState({ layer: 'pv' }, '');
@@ -1020,9 +1069,11 @@ function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add
 $('#btnSettings').onclick = async () => {
   $('#setInfo').textContent = `${destinations().length} destinos · ${await DB.count()} en cola`;
   $('#optReview').checked = LS.get('review', true);
+  $('#optOriginal').checked = LS.get('original', false);
   $('#settings').hidden = false;
 };
 $('#optReview').onchange = e => LS.set('review', e.target.checked);
+$('#optOriginal').onchange = e => LS.set('original', e.target.checked);
 $('#btnCloseSettings').onclick = () => $('#settings').hidden = true;
 $('#btnRetry').onclick = () => { $('#settings').hidden = true; pump(); };
 $('#btnTest').onclick = async () => {
