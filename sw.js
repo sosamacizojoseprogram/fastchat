@@ -1,5 +1,5 @@
 // Guarda la app para que abra aunque no haya señal (las fotos esperan en cola).
-const V = 'fastchat-v4';
+const V = 'fastchat-v5';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
