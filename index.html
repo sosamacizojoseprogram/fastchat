@@ -113,6 +113,19 @@
     padding:calc(env(safe-area-inset-top) + 10px) 12px 10px;background:linear-gradient(#000a,transparent)}
   .topbar .t{flex:1;font-size:14px;color:var(--muted)} .topbar .t b{color:var(--cyan);font-weight:600}
   #video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  #video{transform-origin:center;transition:transform .05s}
+  #zoomLbl{position:absolute;left:50%;bottom:150px;transform:translateX(-50%);z-index:3;padding:6px 12px;border-radius:999px;
+    background:#000a;color:var(--warn);font-weight:700;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
+  #zoomLbl.show{opacity:1}
+  #horiz{position:absolute;left:50%;top:calc(env(safe-area-inset-top) + 64px);transform:translateX(-50%);z-index:3;padding:5px 12px;
+    border-radius:999px;background:#000a;color:var(--cyan);font-size:12.5px;display:none;pointer-events:none}
+  body[data-giro="90"] #horiz, body[data-giro="-90"] #horiz{display:block}
+  /* los íconos de la cámara giran con el celular, como en WhatsApp */
+  #camClose svg, #shutter, #camCount, #recTime{transition:transform .25s}
+  body[data-giro="90"] #camClose svg, body[data-giro="90"] #camCount, body[data-giro="90"] #recTime{transform:rotate(-90deg)}
+  body[data-giro="-90"] #camClose svg, body[data-giro="-90"] #camCount, body[data-giro="-90"] #recTime{transform:rotate(90deg)}
+  .zoomable{touch-action:none;overflow:hidden}
+  .zoomable img{transform-origin:0 0;will-change:transform}
   #flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
   #flash.on{opacity:.8;transition:none}
   .bottombar{position:relative;z-index:2;margin-top:auto;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
@@ -160,7 +173,7 @@
   .rx.unseen{border-color:var(--cyan)}
   .rx .dot{width:8px;height:8px;border-radius:50%;background:var(--cyan);flex:none}
   #pvBox canvas{max-width:100%;display:block;margin:0 auto 10px;border-radius:6px;background:#fff}
-  #pvBox.pdf{display:block;overflow-y:auto}
+  #pvBox.pdf{display:block;overflow-y:auto;touch-action:pan-y}
   #toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 56px);transform:translateX(-50%);z-index:20;
     background:#121820ee;border:1px solid var(--line);padding:9px 15px;border-radius:999px;font-size:14px;opacity:0;
     transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center}
@@ -220,6 +233,8 @@
 <div class="layer" id="cam" hidden>
   <video id="video" playsinline muted autoplay></video>
   <div id="flash"></div>
+  <div id="zoomLbl"></div>
+  <div id="horiz">↔ Horizontal</div>
   <div class="topbar">
     <button class="icon-btn" id="camClose" aria-label="Cerrar" style="color:#fff">
       <svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
@@ -256,6 +271,8 @@
     <button class="icon-btn" id="rvClose" aria-label="Repetir" style="color:#fff">
       <svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <div class="t">Repetir</div>
+    <button class="icon-btn" id="rvRotate" aria-label="Girar" title="Girar la foto" style="color:#fff">
+      <svg class="i" viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg></button>
   </div>
   <div id="rvBox"></div>
   <div class="rvdest">Para: <b id="rvDest"></b></div>
@@ -516,6 +533,61 @@ async function startStream(withAudio) {
   video.srcObject = stream;
   const track = stream.getVideoTracks()[0];
   imageCapture = (!withAudio && 'ImageCapture' in window) ? new ImageCapture(track) : null;
+  // zoom óptico/nativo de la cámara si el celular lo permite; si no, zoom digital
+  const caps = track.getCapabilities ? track.getCapabilities() : {};
+  zoomCap = caps.zoom && caps.zoom.max > caps.zoom.min ? caps.zoom : null;
+  zoomVal = zoomCap ? (track.getSettings().zoom || zoomCap.min) : 1;
+  zoomDig = 1; video.style.transform = ''; mostrarZoom(false);
+}
+
+/* ---------- zoom de la cámara con dos dedos ---------- */
+let zoomCap = null, zoomVal = 1, zoomDig = 1, pinch0 = null, zoomT = null;
+const distTouches = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+function mostrarZoom(ver = true) {
+  const el = $('#zoomLbl'); if (!el) return;
+  const x = zoomCap ? zoomVal / (zoomCap.min || 1) : zoomDig;
+  el.textContent = x.toFixed(1).replace('.0', '') + '×';
+  el.classList.toggle('show', ver && x > 1.01);
+  clearTimeout(zoomT); if (ver) zoomT = setTimeout(() => el.classList.toggle('show', x > 1.01), 1200);
+}
+async function aplicarZoom(z) {
+  const track = stream && stream.getVideoTracks()[0]; if (!track) return;
+  if (zoomCap) {
+    zoomVal = Math.min(zoomCap.max, Math.max(zoomCap.min, z));
+    try { await track.applyConstraints({ advanced: [{ zoom: zoomVal }] }); } catch {}
+  } else {
+    zoomDig = Math.min(5, Math.max(1, z));
+    video.style.transform = zoomDig > 1 ? `scale(${zoomDig})` : '';
+  }
+  mostrarZoom();
+}
+$('#cam').addEventListener('touchstart', e => {
+  if (e.touches.length === 2) pinch0 = { d: distTouches(e.touches), z: zoomCap ? zoomVal : zoomDig };
+}, { passive: true });
+$('#cam').addEventListener('touchmove', e => {
+  if (e.touches.length === 2 && pinch0) { e.preventDefault(); aplicarZoom(pinch0.z * distTouches(e.touches) / pinch0.d); }
+}, { passive: false });
+$('#cam').addEventListener('touchend', e => { if (e.touches.length < 2) pinch0 = null; });
+
+/* ---------- fotos horizontales: la app está fija en vertical, el acelerómetro dice cómo sostienes el celular ---------- */
+let giro = 0;            // grados para enderezar la foto: 0 vertical, -90 / 90 horizontal
+window.addEventListener('devicemotion', e => {
+  const g = e.accelerationIncludingGravity; if (!g || g.x == null) return;
+  const ax = Math.abs(g.x), ay = Math.abs(g.y);
+  let n = giro;
+  if (ax > 6 && ax > ay * 1.3) n = g.x > 0 ? -90 : 90;
+  else if (ay > 6 && ay > ax * 1.3) n = 0;
+  if (n !== giro) { giro = n; document.body.dataset.giro = giro; }
+});
+async function girarBlob(blob, grados) {
+  if (!grados) return blob;
+  const bmp = await createImageBitmap(blob);
+  const c = document.createElement('canvas');
+  c.width = bmp.height; c.height = bmp.width;
+  const g = c.getContext('2d');
+  g.translate(c.width / 2, c.height / 2); g.rotate(grados * Math.PI / 180);
+  g.drawImage(bmp, -bmp.width / 2, -bmp.height / 2); bmp.close && bmp.close();
+  return new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
 }
 function stopStream() {
   if (stream) stream.getTracks().forEach(t => t.stop());
@@ -539,11 +611,17 @@ function closeCam(fromPop) {
 $('#camClose').onclick = () => closeCam();
 
 async function grabPhoto() {
-  if (imageCapture) { try { return await imageCapture.takePhoto(); } catch (e) { console.warn('takePhoto falló', e); } }
-  if (!video.videoWidth) throw new Error('La cámara no está lista');
-  const c = document.createElement('canvas'); c.width = video.videoWidth; c.height = video.videoHeight;
-  c.getContext('2d').drawImage(video, 0, 0);
-  return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('No se pudo capturar')), 'image/jpeg', 0.92));
+  const angulo = giro;                 // cómo estaba el celular al disparar
+  let blob = null;
+  if (imageCapture && zoomDig === 1) { try { blob = await imageCapture.takePhoto(); } catch (e) { console.warn('takePhoto falló', e); } }
+  if (!blob) {
+    if (!video.videoWidth) throw new Error('La cámara no está lista');
+    const vw = video.videoWidth, vh = video.videoHeight, k = 1 / zoomDig;   // zoom digital = recorte al centro
+    const c = document.createElement('canvas'); c.width = Math.round(vw * k); c.height = Math.round(vh * k);
+    c.getContext('2d').drawImage(video, (vw - c.width) / 2, (vh - c.height) / 2, c.width, c.height, 0, 0, c.width, c.height);
+    blob = await new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('No se pudo capturar')), 'image/jpeg', 0.92));
+  }
+  return angulo ? girarBlob(blob, angulo) : blob;
 }
 const stamp = (d = new Date()) => {
   const p = n => String(n).padStart(2, '0');
@@ -633,13 +711,13 @@ $('#pickFile').onchange = e => { const f = [...e.target.files]; e.target.value =
 let pvUrl = null;
 function showPreview(item, title, buttons) {
   if (pvUrl) URL.revokeObjectURL(pvUrl);
-  const box = $('#pvBox'); box.innerHTML = ''; box.className = '';
+  const box = $('#pvBox'); box.innerHTML = ''; box.classList.remove('pdf'); box._resetZoom && box._resetZoom();
   if (item.blob) {
     pvUrl = URL.createObjectURL(item.blob);
     const type = item.blob.type || '';
     if (type.startsWith('image/')) box.innerHTML = `<img src="${pvUrl}" alt="">`;
     else if (type.startsWith('video/')) box.innerHTML = `<video src="${pvUrl}" controls playsinline autoplay></video>`;
-    else if (type === 'application/pdf') { box.className = 'pdf'; renderPdf(item.blob, box); }
+    else if (type === 'application/pdf') { box.classList.add('pdf'); renderPdf(item.blob, box); }
     else if (type.startsWith('text/') || type === 'application/json') {
       item.blob.text().then(t => { box.innerHTML = `<div class="file" style="white-space:pre-wrap;text-align:left;color:var(--fg)">${esc(t)}</div>`; });
     }
@@ -658,6 +736,7 @@ function review(item) {
   rvItem = item;
   if (rvUrl) URL.revokeObjectURL(rvUrl);
   rvUrl = URL.createObjectURL(item.blob);
+  $('#rvBox')._resetZoom && $('#rvBox')._resetZoom();
   $('#rvBox').innerHTML = (item.blob.type || '').startsWith('video/')
     ? `<video src="${rvUrl}" controls playsinline autoplay loop></video>` : `<img src="${rvUrl}" alt="">`;
   $('#rvDest').textContent = label(item.folder);
@@ -673,6 +752,64 @@ async function reviewSend(otra) {
   if (otra) { camShots++; $('#camCount').textContent = `${camShots} enviada(s)`; }
   else closeCam();                    // vuelve al chat del curso para ver la burbuja
 }
+$('#rvRotate').onclick = async () => {          // por si la foto salió de lado
+  if (!rvItem || !(rvItem.blob.type || '').startsWith('image/')) return;
+  rvItem.blob = await girarBlob(rvItem.blob, 90);
+  if (rvUrl) URL.revokeObjectURL(rvUrl);
+  rvUrl = URL.createObjectURL(rvItem.blob);
+  $('#rvBox').innerHTML = `<img src="${rvUrl}" alt="">`;
+};
+
+/* ---------- acercar / alejar con dos dedos (y doble toque) en la vista previa ---------- */
+function habilitarZoom(box) {
+  box.classList.add('zoomable');
+  let s = 1, tx = 0, ty = 0, p0 = null, pan = null, lastTap = 0;
+  const img = () => box.querySelector('img');
+  const pintar = () => { const im = img(); if (im) im.style.transform = s > 1 ? `translate(${tx}px,${ty}px) scale(${s})` : ''; };
+  const limitar = () => {
+    const im = img(); if (!im) return;
+    if (s <= 1) { s = 1; tx = ty = 0; return; }
+    const w = im.offsetWidth, h = im.offsetHeight;
+    tx = Math.min(0, Math.max(w - w * s, tx)); ty = Math.min(0, Math.max(h - h * s, ty));
+  };
+  box._resetZoom = () => { s = 1; tx = ty = 0; pintar(); };
+  box.addEventListener('touchstart', e => {
+    const im = img(); if (!im) return;
+    if (e.touches.length === 2) {
+      const r = im.getBoundingClientRect();     // r.left = posición base + tx
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - (r.left - tx);
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - (r.top - ty);
+      p0 = { d: distTouches(e.touches), s, tx, ty, cx, cy };
+      pan = null;
+    } else if (e.touches.length === 1) {
+      const now = Date.now();
+      if (now - lastTap < 280) {                                  // doble toque: 2.5× donde tocaste / volver
+        const r = im.getBoundingClientRect();
+        if (s > 1) { s = 1; tx = ty = 0; }
+        else { const px = (e.touches[0].clientX - r.left), py = (e.touches[0].clientY - r.top); s = 2.5; tx = -px * 1.5; ty = -py * 1.5; limitar(); }
+        pintar(); lastTap = 0; return;
+      }
+      lastTap = now;
+      if (s > 1) pan = { x: e.touches[0].clientX - tx, y: e.touches[0].clientY - ty };
+    }
+  }, { passive: true });
+  box.addEventListener('touchmove', e => {
+    if (e.touches.length === 2 && p0) {
+      e.preventDefault();
+      const ns = Math.min(6, Math.max(1, p0.s * distTouches(e.touches) / p0.d));
+      // mantiene fijo el punto entre los dedos
+      const k = ns / p0.s;
+      tx = p0.cx - (p0.cx - p0.tx) * k; ty = p0.cy - (p0.cy - p0.ty) * k; s = ns;
+      limitar(); pintar();
+    } else if (e.touches.length === 1 && pan && s > 1) {
+      e.preventDefault();
+      tx = e.touches[0].clientX - pan.x; ty = e.touches[0].clientY - pan.y; limitar(); pintar();
+    }
+  }, { passive: false });
+  box.addEventListener('touchend', e => { if (e.touches.length < 2) p0 = null; if (!e.touches.length) pan = null; });
+}
+habilitarZoom($('#rvBox'));
+habilitarZoom($('#pvBox'));
 $('#rvClose').onclick = closeReview;
 $('#rvSend').onclick = () => reviewSend(false);
 $('#rvMore').onclick = () => reviewSend(true);
